@@ -1487,15 +1487,24 @@ function runSimulation() {
   const strategy  = document.getElementById('strategy').value;
   const { win, prob } = getPayoutInfo(betType);
 
+  // Banca implícita: valor suficiente para cobrir todas as rodadas na aposta base
+  const startingCash = numRounds * betAmount;
+
   let balance = 0;
   let totalBet = 0;
   let currentBet = betAmount;
   let wins = 0;
-  const history = [0];
+  let bankrupt = false;
+  const history    = [0]; // saldo líquido a cada rodada
+  const betHistory = [0]; // total apostado acumulado a cada rodada
 
   for (let i = 0; i < numRounds; i++) {
-    const actualBet = Math.min(currentBet, 10000);
+    const availableCash = startingCash + balance;
+    if (availableCash <= 0) { bankrupt = true; break; }
+
+    let actualBet = Math.min(currentBet, 10000, availableCash);
     totalBet += actualBet;
+
     const roll = Math.random();
     if (roll < prob) {
       balance += actualBet * (win - 1);
@@ -1506,11 +1515,13 @@ function runSimulation() {
       if (strategy === 'martingale') currentBet = currentBet * 2;
     }
     history.push(balance);
+    betHistory.push(totalBet);
   }
 
-  simData = { history, totalBet, wins, numRounds, betAmount, betType, prob, win };
-  drawChart(history, totalBet, numRounds);
-  updateStats(balance, totalBet, numRounds, wins);
+  const roundsPlayed = history.length - 1;
+  simData = { history, betHistory, totalBet, wins, numRounds: roundsPlayed, betAmount, betType, prob, win, bankrupt };
+  drawChart(history, betHistory, totalBet, roundsPlayed);
+  updateStats(balance, totalBet, roundsPlayed, wins, bankrupt);
 }
 
 function resetSimulation() {
@@ -1527,7 +1538,7 @@ function resetSimulation() {
   });
 }
 
-function drawChart(history, totalBet, numRounds) {
+function drawChart(history, betHistory, totalBet, numRounds) {
   const canvas = document.getElementById('simCanvas');
   const dpr = window.devicePixelRatio || 1;
   canvas.width  = canvas.offsetWidth  * dpr;
@@ -1572,12 +1583,9 @@ function drawChart(history, totalBet, numRounds) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Expected value line
-  const houseEdge = 0.027;
-  const evHistory = history.map((_, i) => {
-    const avgBet = totalBet / numRounds;
-    return -(avgBet * houseEdge * i);
-  });
+  // Expected value line — usa apostas acumuladas reais (correto para Martingale e aposta fixa)
+  const houseEdge = 1 / 37;
+  const evHistory = betHistory.map(cumBet => -(cumBet * houseEdge));
   ctx.strokeStyle = 'rgba(138,106,26,0.55)';
   ctx.lineWidth = 1.5;
   ctx.setLineDash([6, 3]);
@@ -1637,16 +1645,21 @@ function drawChart(history, totalBet, numRounds) {
   ctx.fillText('── Resultado real', PAD.left + 180, H - 8);
 }
 
-function updateStats(balance, totalBet, numRounds, wins) {
+function updateStats(balance, totalBet, numRounds, wins, bankrupt) {
   const fmt = v => (v >= 0 ? '+' : '') + 'R$ ' + Math.abs(v).toFixed(2);
-  const expected = -(totalBet * 0.027);
+  const expected = -(totalBet / 37);
 
-  document.getElementById('statRounds').textContent = numRounds;
+  document.getElementById('statRounds').textContent = numRounds + (bankrupt ? ' ⚠ faliu' : '');
   document.getElementById('statTotal').textContent = 'R$ ' + totalBet.toFixed(2);
 
   const resEl = document.getElementById('statResult');
-  resEl.textContent = fmt(balance);
-  resEl.className = 'sim-stat-val ' + (balance >= 0 ? 'pos' : '');
+  if (bankrupt) {
+    resEl.textContent = 'FALÊNCIA';
+    resEl.className = 'sim-stat-val';
+  } else {
+    resEl.textContent = fmt(balance);
+    resEl.className = 'sim-stat-val ' + (balance >= 0 ? 'pos' : '');
+  }
 
   const expEl = document.getElementById('statExpected');
   expEl.textContent = fmt(expected);
@@ -1661,7 +1674,7 @@ function updateCalc() {
   const houseEdge = parseFloat(document.getElementById('gameType').value);
   const rate = parseFloat(document.getElementById('investRate').value) / 100;
 
-  const monthly  = weekly * 4;
+  const monthly  = weekly * 52 / 12;
   const annual   = weekly * 52;
   const decade   = weekly * 52 * 10;
 
@@ -1669,9 +1682,7 @@ function updateCalc() {
   const lossYear  = annual   * houseEdge;
   const loss10y   = decade   * houseEdge;
 
-  // Compound investment alternative
-  const investYear = annual * (Math.pow(1 + rate, 1) - 1) + annual;
-  const invest10y  = 0;
+  // Alternativa: investimento com juros compostos
   let inv = 0;
   for (let y = 1; y <= 10; y++) inv = (inv + annual) * (1 + rate);
   const invest10yVal = inv;
@@ -1745,7 +1756,7 @@ function copyLink() {
 
 // ── RESIZE REDRAW ───────────────────────────────────────────────────────────
 window.addEventListener('resize', () => {
-  if (simData) drawChart(simData.history, simData.totalBet, simData.numRounds);
+  if (simData) drawChart(simData.history, simData.betHistory, simData.totalBet, simData.numRounds);
 });
 </script>
 </body>
