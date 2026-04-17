@@ -1475,7 +1475,7 @@ revealEls.forEach(el => observer.observe(el));
 let simData = null;
 
 function getPayoutInfo(betType) {
-  if (betType === 'red')    return { win: 36, prob: 18/37, label: 'Vermelho/Preto' };
+  if (betType === 'red')    return { win: 2,  prob: 18/37, label: 'Vermelho/Preto' };
   if (betType === 'number') return { win: 36, prob:  1/37, label: 'Número cheio'  };
   if (betType === 'dozen')  return { win: 3,  prob: 12/37, label: 'Dúzia'         };
 }
